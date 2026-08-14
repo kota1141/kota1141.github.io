@@ -1,0 +1,956 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ジェスチャー太陽系 - Hand Gesture Solar System</title>
+<style>
+  :root {
+    --bg-dark: #05060d;
+    --bg-panel: #0c1120;
+    --accent: #4fd1ff;
+    --accent2: #a370ff;
+    --warn: #ffb454;
+    --danger: #ff5f7e;
+    --ok: #4fffa1;
+    --text-main: #eaf4ff;
+    --text-sub: #8fa3c8;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--bg-dark);
+    color: var(--text-main);
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
+    overflow: hidden;
+  }
+
+  #app {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+  }
+
+  /* ---------- 共通オーバーレイ画面 ---------- */
+  .screen {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+    z-index: 50;
+    background: radial-gradient(ellipse at center, #0a1024 0%, #030308 100%);
+  }
+  .hidden { display: none !important; }
+
+  .panel {
+    background: linear-gradient(180deg, rgba(20,28,54,0.9), rgba(8,11,24,0.95));
+    border: 1px solid rgba(79,209,255,0.35);
+    border-radius: 18px;
+    padding: 34px 38px;
+    max-width: 560px;
+    width: 100%;
+    box-shadow: 0 0 60px rgba(79,209,255,0.12), 0 20px 60px rgba(0,0,0,0.6);
+  }
+
+  h1 {
+    font-size: 24px;
+    margin: 0 0 6px;
+    letter-spacing: 1px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  h2 { font-size: 15px; margin: 18px 0 8px; color: var(--accent); letter-spacing: 0.5px; }
+  p { line-height: 1.7; color: var(--text-sub); font-size: 13.5px; margin: 6px 0; }
+
+  .gesture-list {
+    text-align: left;
+    background: rgba(5,8,18,0.6);
+    border: 1px solid rgba(79,209,255,0.2);
+    border-radius: 12px;
+    padding: 14px 18px;
+    margin: 10px 0;
+  }
+  .gesture-list div {
+    font-size: 13px;
+    color: var(--text-main);
+    padding: 5px 0;
+    border-bottom: 1px dashed rgba(143,163,200,0.15);
+  }
+  .gesture-list div:last-child { border-bottom: none; }
+  .gesture-list b { color: var(--accent); font-weight: 600; }
+
+  button.primary-btn {
+    margin-top: 18px;
+    padding: 13px 30px;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: #04101a;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border: none;
+    border-radius: 30px;
+    cursor: pointer;
+    box-shadow: 0 6px 24px rgba(79,209,255,0.35);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  button.primary-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 30px rgba(79,209,255,0.5); }
+  button.primary-btn:active { transform: translateY(0); }
+
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid rgba(79,209,255,0.2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    margin: 0 auto 16px;
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .error-icon { font-size: 40px; margin-bottom: 8px; }
+
+  /* ---------- 3Dシーン ---------- */
+  #scene-container {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+  }
+  #three-canvas { display: block; width: 100%; height: 100%; }
+
+  #labels-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .planet-label {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    font-size: 11px;
+    color: var(--accent);
+    text-shadow: 0 0 6px rgba(79,209,255,0.9), 0 0 2px #000;
+    white-space: nowrap;
+    letter-spacing: 0.5px;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  /* ---------- HUD ---------- */
+  #hud {
+    position: absolute;
+    top: 18px;
+    left: 18px;
+    z-index: 20;
+    background: rgba(6,10,22,0.55);
+    border: 1px solid rgba(79,209,255,0.25);
+    border-radius: 12px;
+    padding: 12px 16px;
+    backdrop-filter: blur(6px);
+    min-width: 240px;
+    pointer-events: none;
+  }
+  #hud .title {
+    font-size: 11px;
+    color: var(--text-sub);
+    letter-spacing: 2px;
+    margin-bottom: 6px;
+  }
+  #hud .status-line {
+    font-size: 13.5px;
+    margin: 3px 0;
+    color: var(--text-main);
+  }
+  #hud .status-line .dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    margin-right: 7px;
+    background: var(--text-sub);
+  }
+  #hud .status-line.active .dot { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+  #hud .status-line.paused .dot { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+  #hud .status-line.fast .dot { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
+  #hud .time-line {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(79,209,255,0.2);
+    font-size: 12.5px;
+    color: var(--accent);
+    letter-spacing: 0.3px;
+  }
+
+  /* ---------- カメラプレビュー ---------- */
+  #camera-preview {
+    position: absolute;
+    bottom: 18px;
+    right: 18px;
+    z-index: 20;
+    width: 200px;
+    height: 150px;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid rgba(79,209,255,0.35);
+    box-shadow: 0 0 24px rgba(79,209,255,0.15), 0 10px 30px rgba(0,0,0,0.5);
+    background: #000;
+  }
+  #camera-preview video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1); /* 鏡合わせ表示 */
+  }
+  #camera-preview canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  #camera-preview .label {
+    position: absolute;
+    top: 4px; left: 8px;
+    font-size: 10px;
+    color: var(--accent);
+    letter-spacing: 1px;
+    text-shadow: 0 0 4px #000;
+    z-index: 2;
+  }
+
+  /* ---------- 右上の丸ボタン群(ヘルプ・リセット) ---------- */
+  .icon-btn {
+    position: absolute;
+    top: 18px;
+    z-index: 20;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: rgba(6,10,22,0.55);
+    border: 1px solid rgba(79,209,255,0.35);
+    color: var(--accent);
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+  }
+  #help-btn { right: 18px; }
+  #reset-btn { right: 60px; font-size: 17px; }
+
+  #help-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(2,4,10,0.75);
+  }
+
+  @media (max-width: 640px) {
+    #camera-preview { width: 130px; height: 98px; }
+    #hud { min-width: 190px; padding: 10px 12px; }
+    .panel { padding: 24px 20px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== 最初の許可・説明画面 ===== -->
+  <div id="screen-start" class="screen">
+    <div class="panel">
+      <h1>🪐 ジェスチャー太陽系</h1>
+      <p>Webカメラで手の動きを読み取り、まるでホログラムを操作するように太陽系を眺めることができます。</p>
+
+      <h2>操作方法</h2>
+      <div class="gesture-list">
+        <div><b>右手をスライド</b> → 視点が左右に回転</div>
+        <div><b>右手で指をつまむ / 開く</b>(ピンチ) → ズームイン / ズームアウト</div>
+        <div><b>左手をグーにする</b> → 時間が停止</div>
+        <div><b>左手を開く</b>(パーに近づける) → 時間の流れが速くなる</div>
+      </div>
+
+      <p>カメラ映像はお使いの端末内でのみ処理され、外部には送信されません。</p>
+      <button id="start-btn" class="primary-btn">カメラを許可して開始する</button>
+    </div>
+  </div>
+
+  <!-- ===== 読み込み中画面 ===== -->
+  <div id="screen-loading" class="screen hidden">
+    <div class="panel">
+      <div class="spinner"></div>
+      <p id="loading-text">カメラとハンドトラッキングを準備しています...</p>
+    </div>
+  </div>
+
+  <!-- ===== エラー画面 ===== -->
+  <div id="screen-error" class="screen hidden">
+    <div class="panel">
+      <div class="error-icon">⚠️</div>
+      <h1 style="background:none;-webkit-text-fill-color:var(--danger);color:var(--danger);">エラーが発生しました</h1>
+      <p id="error-text">問題が発生しました。</p>
+      <button id="retry-btn" class="primary-btn">もう一度試す</button>
+    </div>
+  </div>
+
+  <!-- ===== ヘルプ再表示オーバーレイ ===== -->
+  <div id="help-overlay" class="hidden">
+    <div class="panel">
+      <h1 style="font-size:20px;">操作方法</h1>
+      <div class="gesture-list">
+        <div><b>右手をスライド</b> → 視点が左右に回転</div>
+        <div><b>右手で指をつまむ / 開く</b>(ピンチ) → ズームイン / ズームアウト</div>
+        <div><b>左手をグーにする</b> → 時間が停止</div>
+        <div><b>左手を開く</b>(パーに近づける) → 時間の流れが速くなる</div>
+      </div>
+      <button id="close-help-btn" class="primary-btn">閉じる</button>
+    </div>
+  </div>
+
+  <!-- ===== 3Dシーン ===== -->
+  <div id="scene-container" class="hidden">
+    <canvas id="three-canvas"></canvas>
+    <div id="labels-layer"></div>
+  </div>
+
+  <!-- ===== HUD ===== -->
+  <div id="hud" class="hidden">
+    <div class="title">STATUS</div>
+    <div id="status-right" class="status-line"><span class="dot"></span><span>右手: 未検出</span></div>
+    <div id="status-left" class="status-line"><span class="dot"></span><span>左手: 未検出</span></div>
+    <div class="time-line" id="time-elapsed">経過時間: 0年 0日</div>
+  </div>
+
+  <button id="reset-btn" class="icon-btn hidden" title="視点と時間をリセット">↺</button>
+  <button id="help-btn" class="icon-btn hidden" title="操作方法">?</button>
+
+  <!-- ===== カメラプレビュー ===== -->
+  <div id="camera-preview" class="hidden">
+    <span class="label">CAM</span>
+    <video id="webcam" autoplay playsinline muted></video>
+    <canvas id="landmark-canvas"></canvas>
+  </div>
+
+</div>
+
+<!-- Three.js (CDN, ESモジュール) -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from "three";
+import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+/* ========================================================================
+   要素参照
+   ======================================================================== */
+const screenStart = document.getElementById("screen-start");
+const screenLoading = document.getElementById("screen-loading");
+const screenError = document.getElementById("screen-error");
+const loadingText = document.getElementById("loading-text");
+const errorText = document.getElementById("error-text");
+const startBtn = document.getElementById("start-btn");
+const retryBtn = document.getElementById("retry-btn");
+const helpBtn = document.getElementById("help-btn");
+const resetBtn = document.getElementById("reset-btn");
+const helpOverlay = document.getElementById("help-overlay");
+const closeHelpBtn = document.getElementById("close-help-btn");
+
+const sceneContainer = document.getElementById("scene-container");
+const canvas3d = document.getElementById("three-canvas");
+const labelsLayer = document.getElementById("labels-layer");
+const hud = document.getElementById("hud");
+const statusRightEl = document.getElementById("status-right");
+const statusLeftEl = document.getElementById("status-left");
+const timeElapsedEl = document.getElementById("time-elapsed");
+
+const cameraPreview = document.getElementById("camera-preview");
+const videoEl = document.getElementById("webcam");
+const landmarkCanvas = document.getElementById("landmark-canvas");
+const landmarkCtx = landmarkCanvas.getContext("2d");
+
+// 検出用に映像を左右反転して描き込むオフスクリーンキャンバス
+// (表示のミラーと実際の右手/左手の判定を一致させるため、反転した画像をモデルに渡す)
+const mirrorCanvas = document.createElement("canvas");
+const mirrorCtx = mirrorCanvas.getContext("2d");
+
+/* ========================================================================
+   画面切り替えヘルパー
+   ======================================================================== */
+function showScreen(name) {
+  screenStart.classList.toggle("hidden", name !== "start");
+  screenLoading.classList.toggle("hidden", name !== "loading");
+  screenError.classList.toggle("hidden", name !== "error");
+}
+function showError(message) {
+  errorText.textContent = message;
+  showScreen("error");
+}
+
+/* ========================================================================
+   手のランドマーク接続情報(骨格描画用)
+   ======================================================================== */
+const HAND_CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],
+  [13,17],[17,18],[18,19],[19,20],
+  [0,17]
+];
+
+/* ========================================================================
+   惑星データ (見た目のバランス重視の簡略スケール)
+   軌道半径・惑星サイズは演出用の値。公転周期は実日数の比率をベースにしている。
+   ======================================================================== */
+const PLANETS_DATA = [
+  { name: "水星",   color: 0x9c9c9c, radius: 0.38, orbitRadius: 6.0,  periodDays: 88.0 },
+  { name: "金星",   color: 0xe8c27a, radius: 0.62, orbitRadius: 8.4,  periodDays: 224.7 },
+  { name: "地球",   color: 0x3d85ff, radius: 0.66, orbitRadius: 11.0, periodDays: 365.25 },
+  { name: "火星",   color: 0xd1552c, radius: 0.50, orbitRadius: 13.6, periodDays: 687.0 },
+  { name: "木星",   color: 0xd9b38c, radius: 1.90, orbitRadius: 18.2, periodDays: 4331.0 },
+  { name: "土星",   color: 0xe4d19b, radius: 1.60, orbitRadius: 23.0, periodDays: 10747.0, ring: true },
+  { name: "天王星", color: 0x9fe3e8, radius: 1.10, orbitRadius: 27.4, periodDays: 30589.0 },
+  { name: "海王星", color: 0x4d6fe0, radius: 1.05, orbitRadius: 31.6, periodDays: 59800.0 },
+];
+
+/* ========================================================================
+   Three.js 初期化
+   ======================================================================== */
+let renderer, scene, camera;
+let planetObjects = []; // { data, orbitGroup, mesh, angle, labelEl }
+let sunMesh;
+
+function initThree() {
+  scene = new THREE.Scene();
+
+  camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 3000);
+
+  renderer = new THREE.WebGLRenderer({ canvas: canvas3d, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+
+  // 星空(背景の粒子)
+  const starGeo = new THREE.BufferGeometry();
+  const starCount = 2500;
+  const positions = new Float32Array(starCount * 3);
+  for (let i = 0; i < starCount; i++) {
+    const r = 300 + Math.random() * 500;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = r * Math.cos(phi);
+    positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+  }
+  starGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.4, sizeAttenuation: true });
+  scene.add(new THREE.Points(starGeo, starMat));
+
+  // 太陽
+  const sunGeo = new THREE.SphereGeometry(3.2, 32, 32);
+  const sunMat = new THREE.MeshBasicMaterial({ color: 0xffdd55 });
+  sunMesh = new THREE.Mesh(sunGeo, sunMat);
+  scene.add(sunMesh);
+
+  const sunGlowGeo = new THREE.SphereGeometry(3.9, 32, 32);
+  const sunGlowMat = new THREE.MeshBasicMaterial({ color: 0xffaa33, transparent: true, opacity: 0.18 });
+  scene.add(new THREE.Mesh(sunGlowGeo, sunGlowMat));
+
+  scene.add(new THREE.PointLight(0xffffff, 2.2, 0, 0.15));
+  scene.add(new THREE.AmbientLight(0x404060, 0.6));
+
+  // 惑星 & 軌道線
+  planetObjects = PLANETS_DATA.map((data) => {
+    const orbitGroup = new THREE.Group();
+
+    // 軌道線
+    const orbitPoints = [];
+    const segments = 96;
+    for (let i = 0; i <= segments; i++) {
+      const a = (i / segments) * Math.PI * 2;
+      orbitPoints.push(new THREE.Vector3(Math.cos(a) * data.orbitRadius, 0, Math.sin(a) * data.orbitRadius));
+    }
+    const orbitGeo = new THREE.BufferGeometry().setFromPoints(orbitPoints);
+    const orbitMat = new THREE.LineBasicMaterial({ color: 0x3a5a8a, transparent: true, opacity: 0.35 });
+    scene.add(new THREE.Line(orbitGeo, orbitMat));
+
+    // 惑星本体
+    // 太陽と反対側を向いていても真っ黒にならないよう、惑星自身の色でわずかに発光させる
+    const geo = new THREE.SphereGeometry(data.radius, 24, 24);
+    const mat = new THREE.MeshStandardMaterial({
+      color: data.color,
+      roughness: 0.8,
+      metalness: 0.1,
+      emissive: new THREE.Color(data.color),
+      emissiveIntensity: 0.45,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    orbitGroup.add(mesh);
+
+    // 土星の輪
+    if (data.ring) {
+      const ringGeo = new THREE.RingGeometry(data.radius * 1.4, data.radius * 2.3, 48);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0xcdbd8f, side: THREE.DoubleSide, transparent: true, opacity: 0.6 });
+      const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+      ringMesh.rotation.x = Math.PI / 2.4;
+      orbitGroup.add(ringMesh);
+    }
+
+    scene.add(orbitGroup);
+
+    // ラベル(HTML)
+    const labelEl = document.createElement("div");
+    labelEl.className = "planet-label";
+    labelEl.textContent = data.name;
+    labelsLayer.appendChild(labelEl);
+
+    return {
+      data,
+      orbitGroup,
+      mesh,
+      angle: Math.random() * Math.PI * 2,
+      labelEl,
+    };
+  });
+
+  window.addEventListener("resize", onResize);
+}
+
+function onResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+/* ========================================================================
+   カメラ(視点)の状態
+   上下角度(CAM_PHI)は固定し、水平方向の回転のみをジェスチャーで操作する
+   ======================================================================== */
+const CAM_PHI = Math.PI * 0.38; // 垂直角(固定・変化しない)
+const INITIAL_THETA = Math.PI * 0.25;
+const INITIAL_RADIUS = 55;
+
+const cam = {
+  theta: INITIAL_THETA,  // 水平角
+  radius: INITIAL_RADIUS,
+  targetRadius: INITIAL_RADIUS,
+  thetaVel: 0,
+};
+const RADIUS_MIN = 12;
+const RADIUS_MAX = 95;
+const ROTATE_SENSITIVITY = 2.4; // 手の移動量→回転速度への係数
+const PINCH_MIN = 0.03; // 親指と人差し指がほぼ触れている距離
+const PINCH_MAX = 0.28; // 指を大きく開いた距離
+
+function updateCameraTransform() {
+  camera.position.x = cam.radius * Math.sin(CAM_PHI) * Math.sin(cam.theta);
+  camera.position.y = cam.radius * Math.cos(CAM_PHI);
+  camera.position.z = cam.radius * Math.sin(CAM_PHI) * Math.cos(cam.theta);
+  camera.lookAt(0, 0, 0);
+}
+
+/* ========================================================================
+   シミュレーション時間の状態
+   左手の開き具合(グー=0 〜 パー=SPEED_MAX)がそのまま速度倍率になる
+   ======================================================================== */
+const sim = {
+  days: 0,
+  speedMultiplier: 1.0,
+  targetSpeedMultiplier: 1.0,
+};
+const DAYS_PER_SECOND_BASE = 9; // 速度x1.0のときの1秒あたりの進行日数
+const SPEED_MAX = 12;
+
+// 視点と時間をすべて初期状態に戻す
+function resetAll() {
+  cam.theta = INITIAL_THETA;
+  cam.thetaVel = 0;
+  cam.radius = INITIAL_RADIUS;
+  cam.targetRadius = INITIAL_RADIUS;
+  sim.days = 0;
+  sim.speedMultiplier = 1.0;
+  sim.targetSpeedMultiplier = 1.0;
+  updateCameraTransform();
+}
+
+/* ========================================================================
+   ジェスチャー認識の状態
+   右手 = 視点回転(スライド) + ピンチズーム / 左手 = 時間の速さ(グー〜パー)
+   ======================================================================== */
+let handLandmarker = null;
+
+const gesture = {
+  rightHandTracked: false,
+  prevRightX: 0,
+  leftHandTracked: false,
+  leftOpenness: 0,
+};
+
+// 手のランドマークから「掌サイズ」に対する指先の開き具合(0に近いほどグー)を計算する
+function computeHandOpenRatio(landmarks) {
+  const wrist = landmarks[0];
+  const midMcp = landmarks[9];
+  const palmSize = dist2d(wrist, midMcp) || 0.0001;
+  const tips = [8, 12, 16, 20];
+  let sum = 0;
+  for (const i of tips) sum += dist2d(wrist, landmarks[i]);
+  const avgTipDist = sum / tips.length;
+  return avgTipDist / palmSize;
+}
+function dist2d(a, b) {
+  const dx = a.x - b.x, dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+const GRIP_CLOSED_RATIO = 1.2; // グー(閉じた状態)
+const GRIP_OPEN_RATIO = 2.6;   // パー(開いた状態)
+
+// 検出された手の中から指定した利き手(Left/Right)のランドマークを探す
+function findHand(hands, handednesses, label) {
+  for (let i = 0; i < hands.length; i++) {
+    const category = handednesses[i] && handednesses[i][0];
+    if (category && category.categoryName === label) return hands[i];
+  }
+  return null;
+}
+
+/* ========================================================================
+   MediaPipe HandLandmarker 初期化
+   ======================================================================== */
+async function initHandLandmarker() {
+  const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+  );
+  try {
+    handLandmarker = await HandLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath:
+          "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+        delegate: "GPU",
+      },
+      runningMode: "VIDEO",
+      numHands: 2,
+      minHandDetectionConfidence: 0.5,
+      minHandPresenceConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    });
+  } catch (e) {
+    // GPUデリゲートが使えない環境向けにCPUへフォールバック
+    handLandmarker = await HandLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath:
+          "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+        delegate: "CPU",
+      },
+      runningMode: "VIDEO",
+      numHands: 2,
+      minHandDetectionConfidence: 0.5,
+      minHandPresenceConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    });
+  }
+}
+
+/* ========================================================================
+   カメラ(Webカメラ)初期化
+   ======================================================================== */
+async function initWebcam() {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { width: 640, height: 480, facingMode: "user" },
+    audio: false,
+  });
+  videoEl.srcObject = stream;
+  await new Promise((resolve) => {
+    videoEl.onloadedmetadata = () => {
+      videoEl.play();
+      resolve();
+    };
+  });
+  landmarkCanvas.width = videoEl.videoWidth || 640;
+  landmarkCanvas.height = videoEl.videoHeight || 480;
+  mirrorCanvas.width = videoEl.videoWidth || 640;
+  mirrorCanvas.height = videoEl.videoHeight || 480;
+}
+
+/* ========================================================================
+   起動シーケンス
+   ======================================================================== */
+async function start() {
+  showScreen("loading");
+  try {
+    loadingText.textContent = "カメラへのアクセスを許可してください...";
+    await initWebcam();
+
+    loadingText.textContent = "ハンドトラッキングモデルを読み込んでいます...";
+    await initHandLandmarker();
+
+    loadingText.textContent = "3Dシーンを構築しています...";
+    initThree();
+
+    // 画面切り替え
+    screenLoading.classList.add("hidden");
+    sceneContainer.classList.remove("hidden");
+    hud.classList.remove("hidden");
+    helpBtn.classList.remove("hidden");
+    resetBtn.classList.remove("hidden");
+    cameraPreview.classList.remove("hidden");
+
+    updateCameraTransform();
+    lastFrameTime = performance.now();
+    requestAnimationFrame(renderLoop);
+  } catch (err) {
+    console.error(err);
+    if (err && (err.name === "NotAllowedError" || err.name === "PermissionDeniedError")) {
+      showError("カメラへのアクセスが許可されませんでした。ブラウザの設定でカメラを許可してから、もう一度お試しください。");
+    } else if (err && err.name === "NotFoundError") {
+      showError("カメラが見つかりませんでした。Webカメラが接続されているか確認してください。");
+    } else {
+      showError("初期化中にエラーが発生しました(ライブラリの読み込みに失敗した可能性があります)。ネットワーク接続を確認し、もう一度お試しください。\n詳細: " + (err && err.message ? err.message : err));
+    }
+  }
+}
+
+/* ========================================================================
+   メインループ
+   ======================================================================== */
+let lastFrameTime = 0;
+
+function renderLoop(now) {
+  const dt = Math.min(Math.max((now - lastFrameTime) / 1000, 0), 0.1); // 秒単位、異常値をクランプ
+  lastFrameTime = now;
+
+  processHands(now, dt);
+  updateCameraPhysics(dt);
+  updateSimulationTime(dt);
+  updatePlanets();
+  updateLabels();
+  updateHud();
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(renderLoop);
+}
+
+/* ========================================================================
+   手の検出とジェスチャー解釈
+   ======================================================================== */
+function processHands(now, dt) {
+  landmarkCtx.clearRect(0, 0, landmarkCanvas.width, landmarkCanvas.height);
+
+  if (!handLandmarker || videoEl.readyState < 2) return;
+
+  // 検出用に映像を左右反転してから渡す
+  // (プレビューは鏡合わせ表示なので、モデルにも鏡合わせの画像を渡すことで
+  //  handedness の判定=Left/Rightを実際のユーザーの左右の手と一致させる)
+  mirrorCtx.save();
+  mirrorCtx.scale(-1, 1);
+  mirrorCtx.drawImage(videoEl, -mirrorCanvas.width, 0, mirrorCanvas.width, mirrorCanvas.height);
+  mirrorCtx.restore();
+
+  const result = handLandmarker.detectForVideo(mirrorCanvas, now);
+  const hands = result && result.landmarks ? result.landmarks : [];
+  const handednesses = result && result.handednesses ? result.handednesses : [];
+
+  drawLandmarks(hands, handednesses);
+
+  const rightHand = findHand(hands, handednesses, "Right");
+  const leftHand = findHand(hands, handednesses, "Left");
+
+  let targetThetaVel = 0;
+
+  if (rightHand) {
+    // ---- 右手: スライドで回転、ピンチ(親指⇔人差し指)でズーム ----
+    const handX = rightHand[0].x;
+    if (gesture.rightHandTracked && dt > 0) {
+      const dx = handX - gesture.prevRightX;
+      targetThetaVel = (dx / Math.max(dt, 0.008)) * ROTATE_SENSITIVITY;
+    }
+    gesture.prevRightX = handX;
+    gesture.rightHandTracked = true;
+
+    const pinchDist = dist2d(rightHand[4], rightHand[8]);
+    const t = clamp((pinchDist - PINCH_MIN) / (PINCH_MAX - PINCH_MIN), 0, 1);
+    cam.targetRadius = lerp(RADIUS_MAX, RADIUS_MIN, t);
+  } else {
+    gesture.rightHandTracked = false;
+  }
+
+  if (leftHand) {
+    // ---- 左手: グー(閉じる)〜パー(開く)の度合いで時間の速さを制御 ----
+    const ratio = computeHandOpenRatio(leftHand);
+    const opennessT = clamp((ratio - GRIP_CLOSED_RATIO) / (GRIP_OPEN_RATIO - GRIP_CLOSED_RATIO), 0, 1);
+    sim.targetSpeedMultiplier = opennessT * SPEED_MAX;
+    gesture.leftOpenness = opennessT;
+    gesture.leftHandTracked = true;
+  } else {
+    gesture.leftHandTracked = false;
+  }
+
+  // 回転速度を滑らかに目標値へ追従させる(手が止まる/消えると自然に減衰=慣性)
+  const rotSmooth = 1 - Math.exp(-dt / 0.12);
+  cam.thetaVel = lerp(cam.thetaVel, targetThetaVel, rotSmooth);
+}
+
+function drawLandmarks(hands, handednesses) {
+  const w = landmarkCanvas.width;
+  const h = landmarkCanvas.height;
+
+  hands.forEach((landmarks, i) => {
+    const category = handednesses[i] && handednesses[i][0];
+    const label = category ? category.categoryName : null;
+    const color = label === "Right" ? "rgba(79,209,255,0.9)" : label === "Left" ? "rgba(255,180,84,0.9)" : "rgba(200,200,200,0.9)";
+
+    landmarkCtx.lineWidth = 2;
+    landmarkCtx.strokeStyle = color;
+    landmarkCtx.fillStyle = "rgba(255,255,255,0.95)";
+
+    // 骨格線(検出画像自体が既に鏡合わせなので、そのままの座標で描画する)
+    landmarkCtx.beginPath();
+    for (const [a, b] of HAND_CONNECTIONS) {
+      const pa = landmarks[a], pb = landmarks[b];
+      landmarkCtx.moveTo(pa.x * w, pa.y * h);
+      landmarkCtx.lineTo(pb.x * w, pb.y * h);
+    }
+    landmarkCtx.stroke();
+
+    for (const p of landmarks) {
+      landmarkCtx.beginPath();
+      landmarkCtx.arc(p.x * w, p.y * h, 2.5, 0, Math.PI * 2);
+      landmarkCtx.fill();
+    }
+  });
+}
+
+/* ========================================================================
+   カメラ(視点)の物理更新
+   ======================================================================== */
+function updateCameraPhysics(dt) {
+  cam.theta += cam.thetaVel * dt;
+
+  const zoomSmooth = 1 - Math.exp(-dt / 0.25);
+  cam.radius = lerp(cam.radius, cam.targetRadius, zoomSmooth);
+
+  updateCameraTransform();
+}
+
+/* ========================================================================
+   シミュレーション時間の更新
+   ======================================================================== */
+function updateSimulationTime(dt) {
+  const speedSmooth = 1 - Math.exp(-dt / 0.35);
+  sim.speedMultiplier = lerp(sim.speedMultiplier, sim.targetSpeedMultiplier, speedSmooth);
+  sim.days += dt * DAYS_PER_SECOND_BASE * sim.speedMultiplier;
+}
+
+/* ========================================================================
+   惑星の位置更新
+   ======================================================================== */
+function updatePlanets() {
+  for (const p of planetObjects) {
+    const angle = p.angle + (sim.days / p.data.periodDays) * Math.PI * 2;
+    p.orbitGroup.position.x = Math.cos(angle) * p.data.orbitRadius;
+    p.orbitGroup.position.z = Math.sin(angle) * p.data.orbitRadius;
+    p.mesh.rotation.y += 0.01; // 自転(演出)
+  }
+}
+
+/* ========================================================================
+   ラベル位置更新(3D座標→2Dスクリーン座標へ投影)
+   ======================================================================== */
+const _v = new THREE.Vector3();
+function updateLabels() {
+  for (const p of planetObjects) {
+    p.orbitGroup.getWorldPosition(_v);
+    _v.project(camera);
+
+    if (_v.z > 1) {
+      p.labelEl.style.display = "none";
+      continue;
+    }
+    const x = (_v.x * 0.5 + 0.5) * window.innerWidth;
+    const y = (-_v.y * 0.5 + 0.5) * window.innerHeight;
+    p.labelEl.style.display = "block";
+    p.labelEl.style.left = x + "px";
+    p.labelEl.style.top = (y - 14) + "px";
+  }
+}
+
+/* ========================================================================
+   HUD更新
+   ======================================================================== */
+function updateHud() {
+  // 右手(視点操作)の状態
+  statusRightEl.classList.remove("active");
+  let rightText = "右手: 未検出";
+  if (gesture.rightHandTracked) {
+    rightText = "🖐 右手検出中(回転・ズーム)";
+    statusRightEl.classList.add("active");
+  }
+  statusRightEl.querySelector("span:last-child").textContent = rightText;
+
+  // 左手(時間操作)の状態
+  statusLeftEl.classList.remove("active", "paused", "fast");
+  let leftText = "左手: 未検出";
+  if (gesture.leftHandTracked) {
+    const ratio = sim.speedMultiplier / SPEED_MAX;
+    if (ratio < 0.05) {
+      leftText = "✊ 一時停止中";
+      statusLeftEl.classList.add("paused");
+    } else if (ratio < 0.35) {
+      leftText = `🤏 スロー再生中 (x${sim.speedMultiplier.toFixed(2)})`;
+      statusLeftEl.classList.add("active");
+    } else if (ratio < 0.75) {
+      leftText = `▶ 再生中 (x${sim.speedMultiplier.toFixed(1)})`;
+      statusLeftEl.classList.add("active");
+    } else {
+      leftText = `⏩ 早送り中 (x${sim.speedMultiplier.toFixed(1)})`;
+      statusLeftEl.classList.add("fast");
+    }
+  }
+  statusLeftEl.querySelector("span:last-child").textContent = leftText;
+
+  // 経過時間
+  const totalDays = Math.floor(sim.days);
+  const years = Math.floor(totalDays / 365.25);
+  const remDays = Math.floor(totalDays - years * 365.25);
+  timeElapsedEl.textContent = `経過時間: ${years}年 ${remDays}日`;
+}
+
+/* ========================================================================
+   ユーティリティ
+   ======================================================================== */
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(v, min, max) { return Math.min(Math.max(v, min), max); }
+
+/* ========================================================================
+   イベント登録
+   ======================================================================== */
+startBtn.addEventListener("click", start);
+retryBtn.addEventListener("click", start);
+helpBtn.addEventListener("click", () => helpOverlay.classList.remove("hidden"));
+closeHelpBtn.addEventListener("click", () => helpOverlay.classList.add("hidden"));
+resetBtn.addEventListener("click", resetAll);
+
+/* ========================================================================
+   ライブラリ読み込み確認(importmap / ESモジュール自体が失敗した場合は
+   ここまで到達せず、ブラウザのモジュール読み込みエラーとして表面化する)
+   ======================================================================== */
+if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+  showError("このブラウザはカメラAPI(getUserMedia)に対応していません。最新のChrome/Edge/Safariでお試しください。");
+  startBtn.disabled = true;
+}
+</script>
+</body>
+</html>
