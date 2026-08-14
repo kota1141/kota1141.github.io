@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>夜宮 - Shrine Explorer</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #000; height: 100%; }
+  canvas { display: block; }
+  #hud {
+    position: fixed; top: 14px; left: 14px; z-index: 10;
+    color: #cfcabf; font-family: "Yu Mincho", "Hiragino Mincho ProN", serif;
+    font-size: 13px; letter-spacing: 0.05em; line-height: 1.7;
+    background: rgba(10, 8, 14, 0.45); padding: 10px 16px;
+    border: 1px solid rgba(180, 60, 40, 0.35); border-radius: 2px;
+    text-shadow: 0 0 6px rgba(255,120,60,0.3);
+    pointer-events: none;
+  }
+  #hud b { color: #e0623a; }
+  #vignette {
+    position: fixed; inset: 0; pointer-events: none; z-index: 9;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(0,0,0,0.4) 85%, rgba(0,0,0,0.68) 100%);
+  }
+  #crosshair-title {
+    position: fixed; top: 14px; right: 18px; z-index: 10;
+    color: #8a7d6a; font-family: serif; font-size: 12px; opacity: 0.7;
+  }
+</style>
+</head>
+<body>
+<div id="hud">
+  <div><b>W A S D</b> 移動</div>
+  <div><b>SPACE</b> ジャンプ</div>
+</div>
+<div id="crosshair-title">夜宮 -よみや-</div>
+<div id="vignette"></div>
+
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
+
+// ---------- 基本セットアップ ----------
+const scene = new THREE.Scene();
+const FOG_COLOR = 0x14141f;
+scene.background = new THREE.Color(FOG_COLOR);
+scene.fog = new THREE.FogExp2(FOG_COLOR, 0.024);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 200);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ---------- ライティング ----------
+scene.add(new THREE.AmbientLight(0x2c2c48, 0.9));
+const hemi = new THREE.HemisphereLight(0x40407a, 0x151519, 0.8);
+scene.add(hemi);
+
+const moon = new THREE.DirectionalLight(0x9db4e8, 0.85);
+moon.position.set(-15, 25, -10);
+moon.castShadow = true;
+moon.shadow.mapSize.set(1024, 1024);
+moon.shadow.camera.left = -35;
+moon.shadow.camera.right = 35;
+moon.shadow.camera.top = 35;
+moon.shadow.camera.bottom = -35;
+moon.shadow.camera.far = 70;
+moon.shadow.bias = -0.0015;
+scene.add(moon);
+
+// ---------- 空(グラデーション天球・月・光芒・星) ----------
+const skyMat = new THREE.ShaderMaterial({
+  uniforms: {
+    colorTop: { value: new THREE.Color(0x05060d) },
+    colorMid: { value: new THREE.Color(0x16233f) },
+    colorHorizon: { value: new THREE.Color(0x3c5078) }
+  },
+  vertexShader: `
+    varying vec3 vDir;
+    void main() {
+      vDir = normalize(position);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    varying vec3 vDir;
+    uniform vec3 colorTop;
+    uniform vec3 colorMid;
+    uniform vec3 colorHorizon;
+    void main() {
+      float h = clamp(vDir.y, -0.1, 1.0);
+      vec3 col = h > 0.3
+        ? mix(colorMid, colorTop, smoothstep(0.3, 1.0, h))
+        : mix(colorHorizon, colorMid, smoothstep(-0.1, 0.3, h));
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+  side: THREE.BackSide,
+  fog: false
+});
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(140, 24, 16), skyMat));
+
+const moonDir = new THREE.Vector3(-15, 25, -10).normalize();
+const moonPos = moonDir.clone().multiplyScalar(120);
+
+function makeMoonTexture() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const ctx = c.getContext("2d");
+  const g = ctx.createRadialGradient(96, 96, 10, 128, 128, 150);
+  g.addColorStop(0, "#f5f4ec");
+  g.addColorStop(0.55, "#d9d7c9");
+  g.addColorStop(1, "#a9a99f");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 256, 256);
+  ctx.globalAlpha = 0.35;
+  for (let i = 0; i < 14; i++) {
+    const cx = 40 + Math.random() * 176, cy = 40 + Math.random() * 176, r = 6 + Math.random() * 20;
+    const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    cg.addColorStop(0, "rgba(120,118,108,0.8)");
+    cg.addColorStop(1, "rgba(120,118,108,0)");
+    ctx.fillStyle = cg;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  }
+  return new THREE.CanvasTexture(c);
+}
+const moonMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(7, 24, 24),
+  new THREE.MeshBasicMaterial({ map: makeMoonTexture(), fog: false })
+);
+moonMesh.position.copy(moonPos);
+scene.add(moonMesh);
+
+function makeGlowTexture() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const ctx = c.getContext("2d");
+  const g = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  g.addColorStop(0, "rgba(222,230,255,0.9)");
+  g.addColorStop(0.35, "rgba(182,198,240,0.35)");
+  g.addColorStop(1, "rgba(182,198,240,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 256, 256);
+  return new THREE.CanvasTexture(c);
+}
+const glowTex = makeGlowTexture();
+[26, 60].forEach((scale, i) => {
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTex, transparent: true, opacity: i === 0 ? 0.9 : 0.5,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false
+  }));
+  glow.scale.set(scale, scale, 1);
+  glow.position.copy(moonPos);
+  scene.add(glow);
+});
+
+// 光芒(月から差し込む淡い光の筋)
+function makeRayTexture() {
+  const c = document.createElement("canvas");
+  c.width = 32; c.height = 256;
+  const ctx = c.getContext("2d");
+  const g = ctx.createLinearGradient(0, 0, 0, 256);
+  g.addColorStop(0, "rgba(212,222,255,0.5)");
+  g.addColorStop(1, "rgba(212,222,255,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 32, 256);
+  return new THREE.CanvasTexture(c);
+}
+const rayMat = new THREE.MeshBasicMaterial({
+  map: makeRayTexture(), transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending,
+  depthWrite: false, side: THREE.DoubleSide, fog: false
+});
+for (let i = 0; i < 6; i++) {
+  const ray = new THREE.Mesh(new THREE.PlaneGeometry(10, 90), rayMat);
+  ray.position.copy(moonPos).multiplyScalar(0.62);
+  ray.lookAt(0, 0, 0);
+  ray.rotateZ((i - 2.5) * 0.28);
+  ray.rotateX(-0.3);
+  scene.add(ray);
+}
+
+// 星
+const starGeo = new THREE.BufferGeometry();
+const STAR_COUNT = 700;
+const starPos = new Float32Array(STAR_COUNT * 3);
+const starCol = new Float32Array(STAR_COUNT * 3);
+for (let i = 0; i < STAR_COUNT; i++) {
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(THREE.MathUtils.lerp(1, 0.05, Math.random()));
+  const r = 130;
+  starPos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+  starPos[i * 3 + 1] = r * Math.cos(phi);
+  starPos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+  const b = 0.6 + Math.random() * 0.4;
+  starCol[i * 3] = b; starCol[i * 3 + 1] = b; starCol[i * 3 + 2] = b + Math.random() * 0.08;
+}
+starGeo.setAttribute("position", new THREE.BufferAttribute(starPos, 3));
+starGeo.setAttribute("color", new THREE.BufferAttribute(starCol, 3));
+const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
+  size: 1.4, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0.9, fog: false
+}));
+scene.add(stars);
+
+// ---------- 地面 ----------
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(80, 100),
+  new THREE.MeshStandardMaterial({ color: 0x2c2c34, roughness: 1 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// 参道(石畳)
+const path = new THREE.Mesh(
+  new THREE.PlaneGeometry(4.5, 42),
+  new THREE.MeshStandardMaterial({ color: 0x45454e, roughness: 0.9 })
+);
+path.rotation.x = -Math.PI / 2;
+path.position.set(0, 0.01, 1);
+path.receiveShadow = true;
+scene.add(path);
+
+// ---------- 当たり判定用オブジェクトリスト ----------
+const obstacles = []; // {x1,x2,z1,z2}
+function addObstacle(x1, x2, z1, z2) { obstacles.push({ x1, x2, z1, z2 }); }
+
+// ---------- 鳥居 ----------
+function createTorii(z) {
+  const group = new THREE.Group();
+  const vermil = new THREE.MeshStandardMaterial({ color: 0xa8321c, roughness: 0.6, metalness: 0.05 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x15100d, roughness: 0.75 });
+  const stone = new THREE.MeshStandardMaterial({ color: 0x3e3e42, roughness: 0.95 });
+
+  const pillarGeo = new THREE.CylinderGeometry(0.28, 0.34, 5, 12);
+  [-2.6, 2.6].forEach(x => {
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.44, 0.35, 12), stone);
+    base.position.set(x, 0.17, 0);
+    base.receiveShadow = true;
+    group.add(base);
+
+    const p = new THREE.Mesh(pillarGeo, vermil);
+    p.position.set(x, 2.7, 0);
+    p.castShadow = true;
+    group.add(p);
+  });
+
+  const kasagi = new THREE.Mesh(new THREE.BoxGeometry(6.8, 0.42, 0.75), vermil);
+  kasagi.position.set(0, 5.2, 0);
+  kasagi.castShadow = true;
+  group.add(kasagi);
+
+  const shimaki = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.28, 0.55), dark);
+  shimaki.position.set(0, 5.54, 0);
+  group.add(shimaki);
+
+  const nuki = new THREE.Mesh(new THREE.BoxGeometry(5.7, 0.32, 0.32), dark);
+  nuki.position.set(0, 3.75, 0);
+  nuki.castShadow = true;
+  group.add(nuki);
+
+  const gakuzuka = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.9, 0.34), dark);
+  gakuzuka.position.set(0, 4.6, 0);
+  group.add(gakuzuka);
+
+  const plaque = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, 0.06), new THREE.MeshStandardMaterial({ color: 0x1a1410, roughness: 0.6 }));
+  plaque.position.set(0, 4.65, 0.2);
+  group.add(plaque);
+
+  // 隅木(斜め補強材)
+  [-1, 1].forEach(side => {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.16, 0.16), dark);
+    b.position.set(side * 2.15, 3.98, 0);
+    b.rotation.z = -side * 0.5;
+    group.add(b);
+  });
+
+  group.position.z = z;
+  scene.add(group);
+
+  addObstacle(-2.98, -2.22, z - 0.4, z + 0.4);
+  addObstacle(2.22, 2.98, z - 0.4, z + 0.4);
+}
+createTorii(20);
+createTorii(1);
+
+// ---------- 社殿(銀閣寺をダークに寄せた楼閣風) ----------
+function createShrine(z) {
+  const group = new THREE.Group();
+  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x38383e, roughness: 0.95 });
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x1e170f, roughness: 0.7, metalness: 0.06 });
+  const woodDarkMat = new THREE.MeshStandardMaterial({ color: 0x120d09, roughness: 0.8 });
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x0f0f13, roughness: 0.5, metalness: 0.15 });
+  const paperMat = new THREE.MeshStandardMaterial({ color: 0xe0d0a0, emissive: 0xceab6c, emissiveIntensity: 0.6, roughness: 0.6 });
+  const goldMat = new THREE.MeshStandardMaterial({ color: 0x6b5320, emissive: 0x8a6a28, emissiveIntensity: 0.7, roughness: 0.35, metalness: 0.7 });
+
+  // 石の基壇
+  const platform = new THREE.Mesh(new THREE.BoxGeometry(11.5, 0.7, 8.5), stoneMat);
+  platform.position.y = 0.35;
+  platform.receiveShadow = true;
+  platform.castShadow = true;
+  group.add(platform);
+
+  // 石段
+  for (let i = 0; i < 3; i++) {
+    const s = new THREE.Mesh(new THREE.BoxGeometry(3.2 - i * 0.3, 0.22, 0.9), stoneMat);
+    s.position.set(0, 0.11 + i * 0.22, 4.6 + i * 0.5);
+    s.receiveShadow = true;
+    group.add(s);
+  }
+
+  function lattice(w, h, count, mat) {
+    const g = new THREE.Group();
+    for (let i = 0; i < count; i++) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.05, h, 0.05), mat);
+      bar.position.x = -w / 2 + (w / (count - 1)) * i;
+      g.add(bar);
+    }
+    return g;
+  }
+
+  function makeFloor(width, depth, height, baseY, withRail) {
+    const floor = new THREE.Group();
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), woodMat);
+    wall.position.y = baseY + height / 2;
+    wall.castShadow = true;
+    wall.receiveShadow = true;
+    floor.add(wall);
+
+    // 正面の障子(仄かに発光)と格子
+    const paper = new THREE.Mesh(new THREE.PlaneGeometry(width * 0.6, height * 0.62), paperMat);
+    paper.position.set(0, baseY + height / 2, depth / 2 + 0.02);
+    floor.add(paper);
+    const lat = lattice(width * 0.6, height * 0.62, 6, woodDarkMat);
+    lat.position.set(0, baseY + height / 2, depth / 2 + 0.06);
+    floor.add(lat);
+
+    // 縁側の柱
+    const pillarGeo = new THREE.CylinderGeometry(0.14, 0.16, height + 0.5, 8);
+    const xs = [-width / 2 + 0.3, width / 2 - 0.3];
+    const zs = [-depth / 2 + 0.3, depth / 2 - 0.3];
+    xs.forEach(x => zs.forEach(zp => {
+      const pil = new THREE.Mesh(pillarGeo, woodDarkMat);
+      pil.position.set(x, baseY + height / 2, zp);
+      pil.castShadow = true;
+      floor.add(pil);
+    }));
+
+    if (withRail) {
+      const railY = baseY + height + 0.35;
+      [depth / 2, -depth / 2].forEach(zp => {
+        const r = new THREE.Mesh(new THREE.BoxGeometry(width + 0.4, 0.08, 0.08), woodDarkMat);
+        r.position.set(0, railY, zp);
+        floor.add(r);
+      });
+      [width / 2, -width / 2].forEach(xp => {
+        const r = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, depth + 0.4), woodDarkMat);
+        r.position.set(xp, railY, 0);
+        floor.add(r);
+      });
+    }
+    return floor;
+  }
+
+  group.add(makeFloor(8.4, 6.4, 3.0, 0.7, false));
+  group.add(makeFloor(5.6, 4.4, 2.4, 3.7, true));
+
+  function makeEave(width, depth, y, mat) {
+    const eave = new THREE.Mesh(new THREE.BoxGeometry(width + 1.6, 0.3, depth + 1.6), mat);
+    eave.position.y = y;
+    eave.castShadow = true;
+    return eave;
+  }
+  function makeTopRoof(width, depth, y, mat) {
+    const g = new THREE.Group();
+    g.add(makeEave(width, depth, y, mat));
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(width * 0.5, 0.28, depth * 0.5), mat);
+    slab.position.y = y + 0.29;
+    g.add(slab);
+    const capH = 0.9;
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(Math.min(width, depth) * 0.36, capH, 4), mat);
+    cap.rotation.y = Math.PI / 4;
+    cap.position.y = y + 0.29 + 0.14 + capH / 2;
+    cap.castShadow = true;
+    g.add(cap);
+    return { group: g, topY: y + 0.29 + 0.14 + capH };
+  }
+
+  group.add(makeEave(8.4, 6.4, 3.7, roofMat));
+  const top = makeTopRoof(5.6, 4.4, 6.1, roofMat);
+  group.add(top.group);
+
+  const finial = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), goldMat);
+  finial.position.y = top.topY + 0.1;
+  group.add(finial);
+
+  // 内部の淡い発光(不穏な光)
+  const glow = new THREE.PointLight(0x6a4ccf, 0.8, 9, 2);
+  glow.position.set(0, 2.4, 0);
+  group.add(glow);
+
+  group.position.z = z;
+  scene.add(group);
+
+  addObstacle(-5.75, 5.75, z - 4.25, z + 4.25);
+}
+createShrine(-20);
+
+// ---------- 灯篭(とうろう) ----------
+const emberTargets = [];
+function createLantern(x, z) {
+  const group = new THREE.Group();
+  const stone = new THREE.MeshStandardMaterial({ color: 0x40404a, roughness: 0.9 });
+  const stoneDark = new THREE.MeshStandardMaterial({ color: 0x2a2a30, roughness: 0.95 });
+  const glowMat = new THREE.MeshStandardMaterial({ color: 0xffb066, emissive: 0xff7a20, emissiveIntensity: 2.0, roughness: 0.5 });
+
+  const kiso = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 0.28, 6), stoneDark);
+  kiso.position.y = 0.14; group.add(kiso);
+
+  const sao = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 1.15, 6), stone);
+  sao.position.y = 0.95; group.add(sao);
+
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.035, 6, 6), stoneDark);
+  ring.position.y = 1.35; ring.rotation.x = Math.PI / 2; group.add(ring);
+
+  const chudai = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.24, 0.14, 6), stone);
+  chudai.position.y = 1.62; group.add(chudai);
+
+  const hibukuro = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.55, 6), glowMat);
+  hibukuro.position.y = 2.02; group.add(hibukuro);
+
+  const kasa = new THREE.Mesh(new THREE.ConeGeometry(0.62, 0.55, 6), stone);
+  kasa.position.y = 2.58; group.add(kasa);
+
+  const hoju = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), glowMat);
+  hoju.position.y = 2.95; group.add(hoju);
+
+  group.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  group.position.set(x, 0, z);
+  scene.add(group);
+
+  const light = new THREE.PointLight(0xff8a33, 1.9, 10, 2);
+  light.position.set(x, 2.05, z);
+  scene.add(light);
+
+  addObstacle(x - 0.5, x + 0.5, z - 0.5, z + 0.5);
+  emberTargets.push(new THREE.Vector3(x, 2.05, z));
+}
+[15, 9, -8, -14].forEach(z => {
+  createLantern(-3.6, z);
+  createLantern(3.6, z);
+});
+
+// ---------- 不穏な浮遊オブジェクト(残り火) ----------
+const emberGeo = new THREE.BufferGeometry();
+const EMBER_COUNT = 120;
+const emberPos = new Float32Array(EMBER_COUNT * 3);
+const emberSeed = [];
+for (let i = 0; i < EMBER_COUNT; i++) {
+  const t = emberTargets[i % emberTargets.length];
+  emberPos[i * 3] = t.x + (Math.random() - 0.5) * 1.2;
+  emberPos[i * 3 + 1] = t.y + Math.random() * 2;
+  emberPos[i * 3 + 2] = t.z + (Math.random() - 0.5) * 1.2;
+  emberSeed.push(Math.random() * Math.PI * 2);
+}
+emberGeo.setAttribute("position", new THREE.BufferAttribute(emberPos, 3));
+const embers = new THREE.Points(emberGeo, new THREE.PointsMaterial({
+  color: 0xff8a3c, size: 0.06, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false
+}));
+scene.add(embers);
+
+// ---------- 霧のパーティクル ----------
+function makeFogTexture() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const ctx = c.getContext("2d");
+  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, "rgba(190,195,210,0.5)");
+  g.addColorStop(1, "rgba(190,195,210,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+}
+const fogTex = makeFogTexture();
+const mistGroup = new THREE.Group();
+const MIST_COUNT = 26;
+const mistSprites = [];
+for (let i = 0; i < MIST_COUNT; i++) {
+  const mat = new THREE.SpriteMaterial({ map: fogTex, transparent: true, opacity: 0.32, depthWrite: false });
+  const s = new THREE.Sprite(mat);
+  const scale = 5 + Math.random() * 6;
+  s.scale.set(scale, scale * 0.5, 1);
+  s.position.set((Math.random() - 0.5) * 34, 0.3 + Math.random() * 1.2, 24 - Math.random() * 48);
+  mistGroup.add(s);
+  mistSprites.push({ sprite: s, speed: 0.15 + Math.random() * 0.25, phase: Math.random() * Math.PI * 2 });
+}
+scene.add(mistGroup);
+
+// ---------- 装飾の岩 ----------
+const rockMat = new THREE.MeshStandardMaterial({ color: 0x36363a, roughness: 1 });
+for (let i = 0; i < 10; i++) {
+  const r = new THREE.Mesh(new THREE.IcosahedronGeometry(0.4 + Math.random() * 0.5, 0), rockMat);
+  const side = Math.random() < 0.5 ? -1 : 1;
+  r.position.set(side * (6 + Math.random() * 8), 0.3, (Math.random() - 0.5) * 40);
+  r.rotation.set(Math.random(), Math.random(), Math.random());
+  r.castShadow = true;
+  r.receiveShadow = true;
+  scene.add(r);
+}
+
+// ---------- キャラクター(FF15風のスリムな人型) ----------
+const jacketMat = new THREE.MeshStandardMaterial({ color: 0x141419, roughness: 0.5, metalness: 0.25 });
+const jacketAccentMat = new THREE.MeshStandardMaterial({ color: 0x24242c, roughness: 0.55, metalness: 0.15 });
+const pantsMat = new THREE.MeshStandardMaterial({ color: 0x1c1c22, roughness: 0.75 });
+const bootMat = new THREE.MeshStandardMaterial({ color: 0x0c0c0e, roughness: 0.45, metalness: 0.3 });
+const skinMat = new THREE.MeshStandardMaterial({ color: 0xd8b898, roughness: 0.6 });
+const hairMat = new THREE.MeshStandardMaterial({ color: 0x0e0e14, roughness: 0.35, metalness: 0.15 });
+const beltMat = new THREE.MeshStandardMaterial({ color: 0x3c3c40, roughness: 0.4, metalness: 0.6 });
+
+const character = new THREE.Group();
+
+const hips = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, 0.26), pantsMat);
+hips.position.y = 0.95;
+character.add(hips);
+
+const belt = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.08, 0.3), beltMat);
+belt.position.y = 1.06;
+character.add(belt);
+
+const chest = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.46, 0.28), jacketMat);
+chest.position.y = 1.32;
+character.add(chest);
+
+const collar = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.1, 0.24), jacketAccentMat);
+collar.position.y = 1.54;
+character.add(collar);
+
+const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.09, 0.14, 8), skinMat);
+neck.position.y = 1.6;
+character.add(neck);
+
+const head = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.28, 0.26), skinMat);
+head.position.y = 1.76;
+character.add(head);
+
+const hairCap = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.16, 0.3), hairMat);
+hairCap.position.set(0, 1.88, -0.02);
+character.add(hairCap);
+const spikeGeo = new THREE.ConeGeometry(0.07, 0.32, 6);
+[[-0.1, 2.02, -0.08, 0.35], [0.03, 2.08, -0.14, -0.2], [0.14, 1.98, -0.05, 0.55]].forEach(([sx, sy, sz, rz]) => {
+  const spike = new THREE.Mesh(spikeGeo, hairMat);
+  spike.position.set(sx, sy, sz);
+  spike.rotation.z = rz;
+  spike.rotation.x = -0.4;
+  character.add(spike);
+});
+
+// 手足(肩・股関節・膝にピボットを持つ簡易ボーン構造)
+function makeLimb({ x, y, upperLen, lowerLen, upperR, lowerR, upperMat, lowerMat, endMat, endSize }) {
+  const hipPivot = new THREE.Group();
+  hipPivot.position.set(x, y, 0);
+
+  const upper = new THREE.Mesh(new THREE.BoxGeometry(upperR, upperLen, upperR * 0.85), upperMat);
+  upper.position.y = -upperLen / 2;
+  hipPivot.add(upper);
+
+  const kneePivot = new THREE.Group();
+  kneePivot.position.y = -upperLen;
+  hipPivot.add(kneePivot);
+
+  const lower = new THREE.Mesh(new THREE.BoxGeometry(lowerR, lowerLen, lowerR * 0.85), lowerMat);
+  lower.position.y = -lowerLen / 2;
+  kneePivot.add(lower);
+
+  const end = new THREE.Mesh(new THREE.BoxGeometry(...endSize), endMat);
+  end.position.y = -lowerLen - endSize[1] / 2 + 0.03;
+  kneePivot.add(end);
+
+  return { hipPivot, kneePivot };
+}
+
+const armL = makeLimb({ x: -0.31, y: 1.5, upperLen: 0.32, lowerLen: 0.3, upperR: 0.13, lowerR: 0.1, upperMat: jacketMat, lowerMat: jacketMat, endMat: skinMat, endSize: [0.1, 0.12, 0.09] });
+armL.hipPivot.rotation.z = 0.08;
+character.add(armL.hipPivot);
+
+const armR = makeLimb({ x: 0.31, y: 1.5, upperLen: 0.32, lowerLen: 0.3, upperR: 0.13, lowerR: 0.1, upperMat: jacketMat, lowerMat: jacketMat, endMat: skinMat, endSize: [0.1, 0.12, 0.09] });
+armR.hipPivot.rotation.z = -0.08;
+character.add(armR.hipPivot);
+
+const legL = makeLimb({ x: -0.13, y: 0.95, upperLen: 0.46, lowerLen: 0.42, upperR: 0.18, lowerR: 0.14, upperMat: pantsMat, lowerMat: pantsMat, endMat: bootMat, endSize: [0.2, 0.14, 0.28] });
+character.add(legL.hipPivot);
+
+const legR = makeLimb({ x: 0.13, y: 0.95, upperLen: 0.46, lowerLen: 0.42, upperR: 0.18, lowerR: 0.14, upperMat: pantsMat, lowerMat: pantsMat, endMat: bootMat, endSize: [0.2, 0.14, 0.28] });
+character.add(legR.hipPivot);
+
+const fillLight = new THREE.PointLight(0xaebbff, 0.5, 6, 2);
+fillLight.position.set(0, 1.4, 0.3);
+character.add(fillLight);
+
+character.traverse(o => { if (o.isMesh) { o.castShadow = true; } });
+character.position.set(0, 0, 24);
+scene.add(character);
+
+// ---------- 入力 ----------
+const keys = {};
+addEventListener("keydown", e => {
+  keys[e.code] = true;
+  if (e.code === "Space") e.preventDefault();
+});
+addEventListener("keyup", e => { keys[e.code] = false; });
+
+// ---------- 移動・物理パラメータ ----------
+const PLAYER_RADIUS = 0.45;
+const MOVE_SPEED = 6.2;
+const ACCEL_RATE = 9;   // 加減速のなめらかさ
+const TURN_RATE = 8;    // 向き変更のなめらかさ
+const CAM_POS_RATE = 4.5;  // カメラ追従のなめらかさ
+const CAM_LOOK_RATE = 7;   // 注視点のなめらかさ
+const GRAVITY = -20;
+const JUMP_SPEED = 7;
+const WORLD_LIMIT = { x: 18, zMin: -27, zMax: 27 };
+
+let velocityY = 0;
+let grounded = true;
+let facing = Math.PI; // z+ を向く初期状態(鳥居側)
+const moveVel = new THREE.Vector2(0, 0); // 平滑化された移動速度(x, z)
+
+function collides(x, z) {
+  for (const b of obstacles) {
+    if (x > b.x1 - PLAYER_RADIUS && x < b.x2 + PLAYER_RADIUS &&
+        z > b.z1 - PLAYER_RADIUS && z < b.z2 + PLAYER_RADIUS) return true;
+  }
+  return false;
+}
+
+// ---------- カメラ追従用 ----------
+const camOffset = new THREE.Vector3(0, 3.2, 6.2);
+const desiredCamPos = new THREE.Vector3();
+const desiredLook = new THREE.Vector3();
+const smoothedLook = new THREE.Vector3(character.position.x, 1.5, character.position.z);
+camera.position.set(character.position.x, 3, character.position.z + 8);
+
+// ---------- メインループ ----------
+const clock = new THREE.Clock();
+
+function animate() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+
+  // --- 移動入力(カメラの向き基準) ---
+  let inputX = 0, inputZ = 0;
+  if (keys["KeyW"] || keys["ArrowUp"]) inputZ -= 1;
+  if (keys["KeyS"] || keys["ArrowDown"]) inputZ += 1;
+  if (keys["KeyA"] || keys["ArrowLeft"]) inputX -= 1;
+  if (keys["KeyD"] || keys["ArrowRight"]) inputX += 1;
+
+  let targetVX = 0, targetVZ = 0;
+  if (inputX !== 0 || inputZ !== 0) {
+    const len = Math.hypot(inputX, inputZ);
+    const nx = inputX / len, nz = inputZ / len;
+    const camYaw = facing; // カメラは常にキャラ背後に追従するため facing を基準にする
+    const moveAngle = camYaw + Math.atan2(nx, -nz);
+    targetVX = Math.sin(moveAngle) * MOVE_SPEED;
+    targetVZ = Math.cos(moveAngle) * MOVE_SPEED;
+  }
+
+  // 速度を指数平滑化してなめらかな加減速にする
+  const accelT = 1 - Math.exp(-ACCEL_RATE * dt);
+  moveVel.x += (targetVX - moveVel.x) * accelT;
+  moveVel.y += (targetVZ - moveVel.y) * accelT;
+
+  const speedNow = Math.hypot(moveVel.x, moveVel.y);
+  if (speedNow > 0.05) {
+    const targetFacing = Math.atan2(moveVel.x, moveVel.y);
+    let diff = targetFacing - facing;
+    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    const turnT = 1 - Math.exp(-TURN_RATE * dt);
+    facing += diff * turnT;
+  }
+  character.rotation.y = facing;
+
+  const pos = character.position;
+  const dx = moveVel.x * dt, dz = moveVel.y * dt;
+  if (!collides(pos.x + dx, pos.z)) pos.x += dx; else moveVel.x = 0;
+  if (!collides(pos.x, pos.z + dz)) pos.z += dz; else moveVel.y = 0;
+  pos.x = THREE.MathUtils.clamp(pos.x, -WORLD_LIMIT.x, WORLD_LIMIT.x);
+  pos.z = THREE.MathUtils.clamp(pos.z, WORLD_LIMIT.zMin, WORLD_LIMIT.zMax);
+
+  // --- ジャンプ・重力 ---
+  if (keys["Space"] && grounded) {
+    velocityY = JUMP_SPEED;
+    grounded = false;
+  }
+  velocityY += GRAVITY * dt;
+  pos.y += velocityY * dt;
+  if (pos.y <= 0) {
+    pos.y = 0;
+    velocityY = 0;
+    grounded = true;
+  }
+
+  // 歩行アニメーション
+  const walkAmp = Math.min(1, speedNow / MOVE_SPEED);
+  const walkCycle = walkAmp > 0.05 ? Math.sin(t * 9) * walkAmp : 0;
+  legL.hipPivot.rotation.x = walkCycle * 0.55;
+  legR.hipPivot.rotation.x = -walkCycle * 0.55;
+  legL.kneePivot.rotation.x = Math.max(0, -walkCycle) * 0.9;
+  legR.kneePivot.rotation.x = Math.max(0, walkCycle) * 0.9;
+  armL.hipPivot.rotation.x = -walkCycle * 0.45;
+  armR.hipPivot.rotation.x = walkCycle * 0.45;
+
+  // --- カメラ追従(キャラ背後・位置と注視点をそれぞれ平滑化) ---
+  desiredCamPos.set(
+    pos.x - Math.sin(facing) * camOffset.z,
+    pos.y + camOffset.y,
+    pos.z - Math.cos(facing) * camOffset.z
+  );
+  camera.position.lerp(desiredCamPos, 1 - Math.exp(-CAM_POS_RATE * dt));
+  desiredLook.set(pos.x, pos.y + 1.5, pos.z);
+  smoothedLook.lerp(desiredLook, 1 - Math.exp(-CAM_LOOK_RATE * dt));
+  camera.lookAt(smoothedLook);
+
+  // --- 霧の漂い ---
+  mistSprites.forEach(m => {
+    m.sprite.position.x += Math.sin(t * m.speed + m.phase) * 0.006;
+    m.sprite.position.z += Math.cos(t * m.speed * 0.7 + m.phase) * 0.004;
+  });
+
+  // --- 残り火の揺らめき ---
+  const posAttr = emberGeo.attributes.position;
+  for (let i = 0; i < EMBER_COUNT; i++) {
+    const target = emberTargets[i % emberTargets.length];
+    const s = emberSeed[i];
+    posAttr.array[i * 3 + 1] = target.y + ((t * 0.4 + s) % 2.2);
+    posAttr.array[i * 3] = target.x + Math.sin(t * 0.8 + s) * 0.25;
+    posAttr.array[i * 3 + 2] = target.z + Math.cos(t * 0.6 + s) * 0.25;
+  }
+  posAttr.needsUpdate = true;
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+animate();
+</script>
+</body>
+</html>
