@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>フェイス・ドッジ - 顔で避けるアクションゲーム</title>
+<style>
+  :root {
+    --bg-dark: #0b0e1a;
+    --bg-panel: #141a2e;
+    --accent: #4fd1ff;
+    --accent2: #ff5f7e;
+    --text-main: #eef2ff;
+    --text-sub: #9aa4c7;
+    --danger: #ff5f7e;
+    --ok: #4fffa1;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--bg-dark);
+    color: var(--text-main);
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
+    overflow: hidden;
+  }
+
+  #app {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ---------- 共通パネル ---------- */
+  .screen {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+  }
+  .hidden { display: none !important; }
+
+  .panel {
+    background: linear-gradient(180deg, var(--bg-panel), #0f1426);
+    border: 1px solid #26305a;
+    border-radius: 20px;
+    padding: 32px 36px;
+    max-width: 520px;
+    width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+
+  h1 {
+    font-size: 26px;
+    margin: 0 0 8px;
+    letter-spacing: 0.5px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  h2 { font-size: 18px; margin: 18px 0 8px; color: var(--accent); }
+  p { line-height: 1.7; color: var(--text-sub); font-size: 14px; margin: 6px 0; }
+
+  .instructions {
+    text-align: left;
+    background: #0d1224;
+    border: 1px solid #232c50;
+    border-radius: 12px;
+    padding: 14px 18px;
+    margin: 14px 0;
+  }
+  .instructions li { margin: 6px 0; color: var(--text-main); font-size: 14px; }
+
+  button {
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 700;
+    padding: 14px 28px;
+    border-radius: 12px;
+    border: none;
+    cursor: pointer;
+    background: linear-gradient(90deg, var(--accent), #3b8fff);
+    color: #04101f;
+    margin-top: 14px;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    box-shadow: 0 8px 20px rgba(79, 209, 255, 0.25);
+  }
+  button:hover { transform: translateY(-2px); box-shadow: 0 12px 26px rgba(79, 209, 255, 0.35); }
+  button:active { transform: translateY(0); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  button.secondary {
+    background: transparent;
+    color: var(--text-main);
+    border: 1px solid #33406f;
+    box-shadow: none;
+  }
+
+  .status-line {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-sub);
+    margin-top: 12px;
+    min-height: 20px;
+  }
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid #33406f;
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .error-box {
+    margin-top: 14px;
+    background: rgba(255, 95, 126, 0.1);
+    border: 1px solid rgba(255, 95, 126, 0.4);
+    color: #ffb4c2;
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 13px;
+    text-align: left;
+    display: none;
+  }
+  .error-box.show { display: block; }
+
+  /* ---------- ゲーム画面 ---------- */
+  #gameScreen {
+    padding: 0;
+  }
+  #gameWrap {
+    position: relative;
+    width: min(96vw, 900px);
+    height: min(88vh, 620px);
+    border-radius: 18px;
+    overflow: hidden;
+    border: 1px solid #232c50;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  }
+  #gameCanvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle at 50% 20%, #16204a 0%, #0a0e1e 70%);
+  }
+
+  #hud {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 14px 16px;
+    pointer-events: none;
+    font-variant-numeric: tabular-nums;
+  }
+  #scoreBox {
+    background: rgba(10, 14, 30, 0.6);
+    border: 1px solid #26305a;
+    border-radius: 10px;
+    padding: 8px 14px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--accent);
+    backdrop-filter: blur(4px);
+  }
+  #livesBox {
+    background: rgba(10, 14, 30, 0.6);
+    border: 1px solid #26305a;
+    border-radius: 10px;
+    padding: 8px 14px;
+    font-size: 18px;
+    letter-spacing: 4px;
+    backdrop-filter: blur(4px);
+  }
+
+  #mouthGauge {
+    position: absolute;
+    bottom: 14px;
+    left: 16px;
+    width: 140px;
+    background: rgba(10, 14, 30, 0.6);
+    border: 1px solid #26305a;
+    border-radius: 10px;
+    padding: 8px 10px;
+    pointer-events: none;
+  }
+  #mouthGauge .label { font-size: 10px; color: var(--text-sub); margin-bottom: 4px; }
+  #mouthGaugeBar {
+    height: 6px;
+    border-radius: 4px;
+    background: #202a52;
+    overflow: hidden;
+  }
+  #mouthGaugeFill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--ok), var(--accent));
+    transition: width 0.05s linear;
+  }
+
+  #camPreview {
+    position: absolute;
+    bottom: 14px;
+    right: 14px;
+    width: 130px;
+    height: 98px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 2px solid #26305a;
+    background: #000;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+  }
+  #camPreview video, #camPreview canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1); /* 鏡像表示 */
+  }
+  #camPreview .cam-label {
+    position: absolute;
+    top: 2px; left: 4px;
+    font-size: 9px;
+    color: #fff;
+    background: rgba(0,0,0,0.5);
+    padding: 1px 5px;
+    border-radius: 4px;
+    z-index: 2;
+    transform: none;
+  }
+  #faceStatus {
+    position: absolute;
+    bottom: 2px; left: 4px;
+    right: 4px;
+    font-size: 9px;
+    z-index: 2;
+    padding: 1px 5px;
+    border-radius: 4px;
+    text-align: center;
+  }
+  .face-ok { background: rgba(79,255,161,0.75); color: #04150c; }
+  .face-ng { background: rgba(255,95,126,0.8); color: #2a0007; }
+
+  #countdownOverlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(5, 7, 16, 0.75);
+    font-size: 20px;
+    gap: 10px;
+    text-align: center;
+    padding: 20px;
+  }
+  #countdownNum {
+    font-size: 64px;
+    font-weight: 800;
+    color: var(--accent);
+  }
+
+  #hitFlash {
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 40, 70, 0.35);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* ---------- ゲームオーバー ---------- */
+  #gameOverScreen .panel { text-align: center; }
+  #finalScore {
+    font-size: 44px;
+    font-weight: 800;
+    color: var(--accent);
+    margin: 10px 0;
+  }
+  #finalStats { color: var(--text-sub); font-size: 13px; margin-bottom: 6px; }
+
+  .footer-note {
+    margin-top: 18px;
+    font-size: 11px;
+    color: #5a6592;
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ============ スタート画面 ============ -->
+  <div id="startScreen" class="screen">
+    <div class="panel">
+      <h1>フェイス・ドッジ</h1>
+      <p>Webカメラで顔の動きを読み取り、キャラクターを操作して障害物をかわすアクションゲームです。</p>
+
+      <h2>操作方法</h2>
+      <div class="instructions">
+        <ul style="margin:0; padding-left: 18px;">
+          <li>👤 顔を<b>左右</b>に動かす・傾ける → キャラクターが<b>左右</b>に移動</li>
+          <li>👤 顔を<b>上下</b>に動かす・傾ける → キャラクターが<b>上下</b>に移動</li>
+          <li>😮 <b>口を大きく開ける</b> → 一瞬<b>無敵</b>になる（クールタイムあり）</li>
+        </ul>
+      </div>
+
+      <h2>ルール</h2>
+      <div class="instructions">
+        <ul style="margin:0; padding-left: 18px;">
+          <li>右側から流れてくる障害物を避けて生き残ろう</li>
+          <li>ライフは3つ。障害物に当たると1つ減る</li>
+          <li>時間経過とともに障害物のスピードと頻度が上がる</li>
+          <li>生存時間と回避数でスコアが決まる</li>
+        </ul>
+      </div>
+
+      <button id="startBtn">カメラを許可してゲーム開始</button>
+      <div class="status-line" id="startStatus"></div>
+      <div class="error-box" id="startError"></div>
+      <p class="footer-note">カメラ映像は外部に送信されず、すべてこのブラウザ内で処理されます。</p>
+    </div>
+  </div>
+
+  <!-- ============ ゲーム画面 ============ -->
+  <div id="gameScreen" class="screen hidden">
+    <div id="gameWrap">
+      <canvas id="gameCanvas"></canvas>
+
+      <div id="hud">
+        <div id="scoreBox">SCORE: <span id="scoreValue">0</span></div>
+        <div id="livesBox"></div>
+      </div>
+
+      <div id="mouthGauge">
+        <div class="label">口ゲージ（開けると無敵）</div>
+        <div id="mouthGaugeBar"><div id="mouthGaugeFill"></div></div>
+      </div>
+
+      <div id="camPreview">
+        <video id="camVideo" autoplay playsinline muted></video>
+        <canvas id="camOverlay"></canvas>
+        <div class="cam-label">CAM</div>
+        <div id="faceStatus" class="face-ng">顔を検出中...</div>
+      </div>
+
+      <div id="countdownOverlay">
+        <div>正面を向いて中央で構えてください</div>
+        <div id="countdownNum">3</div>
+      </div>
+
+      <div id="hitFlash"></div>
+    </div>
+  </div>
+
+  <!-- ============ ゲームオーバー画面 ============ -->
+  <div id="gameOverScreen" class="screen hidden">
+    <div class="panel">
+      <h1 style="color:var(--danger); -webkit-text-fill-color: var(--danger);">GAME OVER</h1>
+      <div id="finalScore">0</div>
+      <div id="finalStats"></div>
+      <button id="retryBtn">もう一度遊ぶ</button>
+      <br>
+      <button class="secondary" id="backToTitleBtn">タイトルに戻る</button>
+    </div>
+  </div>
+
+</div>
+
+<script type="module">
+// =====================================================================
+// フェイス・ドッジ：顔検出で操作するシンプルな障害物避けゲーム
+// MediaPipe Face Landmarker（CDN）+ getUserMedia + Canvas API のみで構成
+// =====================================================================
+
+// MediaPipeライブラリはCDNから動的importする（読み込み失敗を捕捉してエラー表示するため）
+let FaceLandmarker = null;
+let FilesetResolver = null;
+
+// ---------------------------------------------------------------
+// DOM取得
+// ---------------------------------------------------------------
+const startScreen = document.getElementById("startScreen");
+const gameScreen = document.getElementById("gameScreen");
+const gameOverScreen = document.getElementById("gameOverScreen");
+
+const startBtn = document.getElementById("startBtn");
+const startStatus = document.getElementById("startStatus");
+const startError = document.getElementById("startError");
+
+const retryBtn = document.getElementById("retryBtn");
+const backToTitleBtn = document.getElementById("backToTitleBtn");
+const finalScoreEl = document.getElementById("finalScore");
+const finalStatsEl = document.getElementById("finalStats");
+
+const gameCanvas = document.getElementById("gameCanvas");
+const ctx = gameCanvas.getContext("2d");
+
+const camVideo = document.getElementById("camVideo");
+const camOverlay = document.getElementById("camOverlay");
+const camCtx = camOverlay.getContext("2d");
+const faceStatusEl = document.getElementById("faceStatus");
+
+const scoreValueEl = document.getElementById("scoreValue");
+const livesBoxEl = document.getElementById("livesBox");
+const mouthGaugeFillEl = document.getElementById("mouthGaugeFill");
+
+const countdownOverlay = document.getElementById("countdownOverlay");
+const countdownNumEl = document.getElementById("countdownNum");
+const hitFlashEl = document.getElementById("hitFlash");
+
+// ---------------------------------------------------------------
+// グローバル状態
+// ---------------------------------------------------------------
+let faceLandmarker = null;
+let stream = null;
+let lastVideoTime = -1;
+
+// 顔から得る操作値
+const face = {
+  detected: false,
+  noseX: 0.5,      // 正規化された鼻先のX座標（0〜1）
+  noseY: 0.5,      // 正規化された鼻先のY座標（0〜1）
+  mouthOpenRatio: 0 // 口の開き具合（0〜1目安）
+};
+
+// キャリブレーション（ゲーム開始時の基準顔位置）
+const calib = { x: 0.5, y: 0.5, done: false };
+
+// キャラクター状態
+const player = {
+  x: 0, y: 0,        // 実座標（キャンバス基準）
+  targetX: 0, targetY: 0,
+  radius: 22,
+  invincible: false,
+  invincibleUntil: 0
+};
+
+// 口アクションのクールダウン管理
+const mouthAction = {
+  cooldownUntil: 0,
+  cooldownMs: 1500,
+  invincibleMs: 1200,
+  openThreshold: 0.045
+};
+
+// ゲーム全体の状態
+const gameState = {
+  running: false,
+  countdownActive: false,
+  startTime: 0,
+  lastFrameTime: 0,
+  obstacles: [],
+  spawnTimer: 0,
+  score: 0,
+  dodged: 0,
+  lives: 3,
+  maxLives: 3,
+  gameOver: false
+};
+
+const PLAY_MARGIN = 24;
+
+// =================================================================
+// 1. 初期化：MediaPipe Face Landmarker のロード
+// =================================================================
+async function initFaceLandmarker() {
+  if (!FaceLandmarker || !FilesetResolver) {
+    const mod = await import(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm"
+    );
+    FaceLandmarker = mod.FaceLandmarker;
+    FilesetResolver = mod.FilesetResolver;
+  }
+  const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+  );
+  faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath:
+        "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+      delegate: "GPU"
+    },
+    outputFaceBlendshapes: true,
+    runningMode: "VIDEO",
+    numFaces: 1
+  });
+}
+
+// =================================================================
+// 2. カメラ起動
+// =================================================================
+async function startCamera() {
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { width: 480, height: 360, facingMode: "user" },
+    audio: false
+  });
+  camVideo.srcObject = stream;
+  await new Promise((resolve) => {
+    camVideo.onloadedmetadata = () => {
+      camVideo.play();
+      resolve();
+    };
+  });
+  camOverlay.width = camVideo.videoWidth;
+  camOverlay.height = camVideo.videoHeight;
+}
+
+// =================================================================
+// 3. スタートボタン押下時の処理（許可要求 → モデルロード → ゲーム開始）
+// =================================================================
+startBtn.addEventListener("click", async () => {
+  startBtn.disabled = true;
+  startError.classList.remove("show");
+  startError.textContent = "";
+
+  try {
+    setStatus("カメラへのアクセスを許可してください...");
+    await startCamera();
+
+    setStatus("顔検出モデルを読み込み中...（初回は数秒かかります）");
+    if (!faceLandmarker) {
+      await initFaceLandmarker();
+    }
+
+    setStatus("準備完了！");
+    beginGameFlow();
+  } catch (err) {
+    console.error(err);
+    handleFatalError(err);
+    startBtn.disabled = false;
+  }
+});
+
+function setStatus(text) {
+  startStatus.innerHTML = text
+    ? `<span class="spinner"></span><span>${text}</span>`
+    : "";
+}
+
+function handleFatalError(err) {
+  setStatus("");
+  let msg = "予期しないエラーが発生しました。ページを再読み込みして再度お試しください。";
+
+  if (err && err.name === "NotAllowedError") {
+    msg = "カメラへのアクセスが許可されませんでした。ブラウザの設定でカメラを許可してから、もう一度お試しください。";
+  } else if (err && err.name === "NotFoundError") {
+    msg = "カメラデバイスが見つかりませんでした。カメラが接続されているか確認してください。";
+  } else if (err && /fetch|network|load/i.test(err.message || "")) {
+    msg = "顔認識ライブラリの読み込みに失敗しました。ネットワーク接続を確認し、再度お試しください。";
+  }
+
+  startError.textContent = msg;
+  startError.classList.add("show");
+
+  // カメラを取得済みなら停止しておく
+  stopCamera();
+}
+
+function stopCamera() {
+  if (stream) {
+    stream.getTracks().forEach((t) => t.stop());
+    stream = null;
+  }
+}
+
+// =================================================================
+// 4. 顔検出ループ（映像フレームごとに実行）
+// =================================================================
+function detectFaceLoop() {
+  if (!faceLandmarker || camVideo.readyState < 2) {
+    requestAnimationFrame(detectFaceLoop);
+    return;
+  }
+
+  const nowMs = performance.now();
+  if (camVideo.currentTime !== lastVideoTime) {
+    lastVideoTime = camVideo.currentTime;
+    const result = faceLandmarker.detectForVideo(camVideo, nowMs);
+    processFaceResult(result);
+  }
+
+  drawCamPreview();
+  requestAnimationFrame(detectFaceLoop);
+}
+
+function processFaceResult(result) {
+  if (!result.faceLandmarks || result.faceLandmarks.length === 0) {
+    face.detected = false;
+    faceStatusEl.textContent = "顔を検出中...";
+    faceStatusEl.className = "face-ng";
+    return;
+  }
+
+  face.detected = true;
+  faceStatusEl.textContent = "認識中 ✓";
+  faceStatusEl.className = "face-ok";
+
+  const lm = result.faceLandmarks[0];
+
+  // 鼻先（index 1）で顔の位置を取得
+  const nose = lm[1];
+  face.noseX = nose.x; // 0(左)〜1(右)  ※video座標系（非鏡像）
+  face.noseY = nose.y; // 0(上)〜1(下)
+
+  // 口の開き具合：上唇(13)・下唇(14)の距離を、顔の縦幅（額10〜顎152）で正規化
+  const upperLip = lm[13];
+  const lowerLip = lm[14];
+  const forehead = lm[10];
+  const chin = lm[152];
+  const mouthDist = dist(upperLip, lowerLip);
+  const faceHeight = dist(forehead, chin) || 1;
+  face.mouthOpenRatio = mouthDist / faceHeight;
+
+  // blendshapesがあればjawOpenも参考値として使う（あれば精度向上）
+  if (result.faceBlendshapes && result.faceBlendshapes.length > 0) {
+    const categories = result.faceBlendshapes[0].categories;
+    const jaw = categories.find((c) => c.categoryName === "jawOpen");
+    if (jaw) {
+      face.mouthOpenRatio = Math.max(face.mouthOpenRatio, jaw.score * 0.6);
+    }
+  }
+}
+
+function dist(a, b) {
+  const dx = a.x - b.x, dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+// カメラプレビューに鼻位置の目印を描画（認識できているかの確認用）
+function drawCamPreview() {
+  camCtx.clearRect(0, 0, camOverlay.width, camOverlay.height);
+  if (!face.detected) return;
+  const px = face.noseX * camOverlay.width;
+  const py = face.noseY * camOverlay.height;
+  camCtx.beginPath();
+  camCtx.arc(px, py, 5, 0, Math.PI * 2);
+  camCtx.fillStyle = "#4fffa1";
+  camCtx.fill();
+}
+
+// =================================================================
+// 5. ゲーム開始フロー（カウントダウン → キャリブレーション → 本編）
+// =================================================================
+function beginGameFlow() {
+  startScreen.classList.add("hidden");
+  gameOverScreen.classList.add("hidden");
+  gameScreen.classList.remove("hidden");
+
+  resizeCanvas();
+  resetGameState();
+
+  // 顔検出ループはまだ動いていなければ開始
+  if (!detectFaceLoopStarted) {
+    detectFaceLoopStarted = true;
+    detectFaceLoop();
+  }
+
+  runCountdown();
+}
+let detectFaceLoopStarted = false;
+
+function resizeCanvas() {
+  const rect = gameCanvas.parentElement.getBoundingClientRect();
+  gameCanvas.width = rect.width;
+  gameCanvas.height = rect.height;
+  player.x = gameCanvas.width / 2;
+  player.y = gameCanvas.height / 2;
+  player.targetX = player.x;
+  player.targetY = player.y;
+}
+window.addEventListener("resize", () => {
+  if (!gameScreen.classList.contains("hidden")) resizeCanvas();
+});
+
+function resetGameState() {
+  gameState.running = false;
+  gameState.obstacles = [];
+  gameState.spawnTimer = 0;
+  gameState.score = 0;
+  gameState.dodged = 0;
+  gameState.lives = gameState.maxLives;
+  gameState.gameOver = false;
+  player.invincible = false;
+  player.invincibleUntil = 0;
+  calib.done = false;
+  updateHud();
+}
+
+function runCountdown() {
+  countdownOverlay.classList.remove("hidden");
+  gameState.countdownActive = true;
+  let count = 3;
+  countdownNumEl.textContent = count;
+
+  const timer = setInterval(() => {
+    count -= 1;
+    if (count > 0) {
+      countdownNumEl.textContent = count;
+    } else {
+      clearInterval(timer);
+      // カウントダウン終了時点の顔位置を基準（中央）としてキャリブレーション
+      calib.x = face.detected ? face.noseX : 0.5;
+      calib.y = face.detected ? face.noseY : 0.5;
+      calib.done = true;
+
+      countdownOverlay.classList.add("hidden");
+      gameState.countdownActive = false;
+      startMainLoop();
+    }
+  }, 800);
+}
+
+// =================================================================
+// 6. メインゲームループ
+// =================================================================
+function startMainLoop() {
+  gameState.running = true;
+  gameState.gameOver = false;
+  gameState.startTime = performance.now();
+  gameState.lastFrameTime = gameState.startTime;
+  requestAnimationFrame(gameLoop);
+}
+
+function gameLoop(now) {
+  if (!gameState.running) return;
+
+  const dt = Math.min(48, now - gameState.lastFrameTime); // ms、スパイク対策で上限
+  gameState.lastFrameTime = now;
+  const elapsedSec = (now - gameState.startTime) / 1000;
+
+  updatePlayerFromFace();
+  updateMouthAction(now);
+  spawnObstacles(dt, elapsedSec);
+  updateObstacles(dt);
+  checkCollisions(now);
+  updateScore(elapsedSec);
+  render(now, elapsedSec);
+
+  if (gameState.gameOver) {
+    endGame();
+    return;
+  }
+
+  requestAnimationFrame(gameLoop);
+}
+
+// ---- プレイヤー位置の更新（顔位置 → キャラクター座標） ----
+function updatePlayerFromFace() {
+  const w = gameCanvas.width;
+  const h = gameCanvas.height;
+
+  if (face.detected && calib.done) {
+    // video要素は非鏡像（実際のカメラ映像そのまま）なので、
+    // 顔を右に動かすと生の座標では noseX は「減少」する。
+    // そのため (基準値 - 現在値) とすることで「右に動かす→キャラも右へ」に対応させる
+    const dx = calib.x - face.noseX;
+    const dy = face.noseY - calib.y;
+
+    const sensitivityX = w * 2.4;
+    const sensitivityY = h * 2.6;
+
+    player.targetX = w / 2 + dx * sensitivityX;
+    player.targetY = h / 2 + dy * sensitivityY;
+
+    player.targetX = clamp(player.targetX, PLAY_MARGIN + player.radius, w - PLAY_MARGIN - player.radius);
+    player.targetY = clamp(player.targetY, PLAY_MARGIN + player.radius, h - PLAY_MARGIN - player.radius);
+  }
+
+  // なめらかに追従（低域通過フィルタ）
+  player.x += (player.targetX - player.x) * 0.22;
+  player.y += (player.targetY - player.y) * 0.22;
+}
+
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
+// ---- 口を開けるアクション（無敵） ----
+function updateMouthAction(now) {
+  mouthGaugeFillEl.style.width = `${Math.min(100, (face.mouthOpenRatio / mouthAction.openThreshold) * 100)}%`;
+
+  const onCooldown = now < mouthAction.cooldownUntil;
+  mouthGaugeFillEl.style.background = onCooldown
+    ? "linear-gradient(90deg, #555, #777)"
+    : "linear-gradient(90deg, var(--ok), var(--accent))";
+
+  if (!onCooldown && face.mouthOpenRatio > mouthAction.openThreshold) {
+    player.invincible = true;
+    player.invincibleUntil = now + mouthAction.invincibleMs;
+    mouthAction.cooldownUntil = now + mouthAction.cooldownMs;
+  }
+
+  if (player.invincible && now > player.invincibleUntil) {
+    player.invincible = false;
+  }
+}
+
+// ---- 難易度（時間経過で速度・出現頻度アップ） ----
+const difficulty = {
+  baseSpeed: 3.2,
+  speedGrowthPerSec: 0.055,
+  maxSpeed: 11,
+  baseInterval: 1100, // ms
+  minInterval: 320,
+  intervalShrinkPerSec: 14
+};
+
+function getObstacleSpeed(elapsedSec) {
+  return Math.min(difficulty.maxSpeed, difficulty.baseSpeed + elapsedSec * difficulty.speedGrowthPerSec);
+}
+function getSpawnInterval(elapsedSec) {
+  return Math.max(difficulty.minInterval, difficulty.baseInterval - elapsedSec * difficulty.intervalShrinkPerSec);
+}
+
+// ---- 障害物の生成 ----
+function spawnObstacles(dt, elapsedSec) {
+  gameState.spawnTimer += dt;
+  const interval = getSpawnInterval(elapsedSec);
+  if (gameState.spawnTimer >= interval) {
+    gameState.spawnTimer = 0;
+
+    const h = gameCanvas.height;
+    const size = 22 + Math.random() * 26;
+    const y = PLAY_MARGIN + Math.random() * (h - PLAY_MARGIN * 2 - size);
+    const speed = getObstacleSpeed(elapsedSec) * (0.85 + Math.random() * 0.4);
+    const drift = (Math.random() - 0.5) * 1.6; // 上下にわずかにドリフト
+
+    gameState.obstacles.push({
+      x: gameCanvas.width + size,
+      y,
+      size,
+      vx: -speed,
+      vy: drift,
+      color: Math.random() < 0.25 ? "#ffb84f" : "#ff5f7e"
+    });
+  }
+}
+
+function updateObstacles(dt) {
+  const h = gameCanvas.height;
+  const step = dt / 16.67; // 60fps基準へ正規化
+
+  for (const ob of gameState.obstacles) {
+    ob.x += ob.vx * step;
+    ob.y += ob.vy * step;
+    if (ob.y < PLAY_MARGIN) { ob.y = PLAY_MARGIN; ob.vy *= -1; }
+    if (ob.y > h - PLAY_MARGIN - ob.size) { ob.y = h - PLAY_MARGIN - ob.size; ob.vy *= -1; }
+  }
+
+  // 画面外に出た障害物を除去し、回避数をカウント
+  const remaining = [];
+  for (const ob of gameState.obstacles) {
+    if (ob.x + ob.size < -10) {
+      gameState.dodged += 1;
+    } else {
+      remaining.push(ob);
+    }
+  }
+  gameState.obstacles = remaining;
+}
+
+// ---- 当たり判定 ----
+function checkCollisions(now) {
+  if (player.invincible) return;
+
+  for (const ob of gameState.obstacles) {
+    if (ob.hitDone) continue;
+    const cx = ob.x + ob.size / 2;
+    const cy = ob.y + ob.size / 2;
+    const dx = player.x - cx;
+    const dy = player.y - cy;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const minDist = player.radius + ob.size / 2 * 0.85;
+
+    if (distance < minDist) {
+      ob.hitDone = true;
+      onPlayerHit(now);
+      break;
+    }
+  }
+}
+
+function onPlayerHit(now) {
+  gameState.lives -= 1;
+  updateHud();
+
+  hitFlashEl.style.transition = "none";
+  hitFlashEl.style.opacity = "1";
+  requestAnimationFrame(() => {
+    hitFlashEl.style.transition = "opacity 0.4s ease";
+    hitFlashEl.style.opacity = "0";
+  });
+
+  // 被弾後は短時間の無敵time（連続ヒット防止）
+  player.invincible = true;
+  player.invincibleUntil = now + 900;
+
+  if (gameState.lives <= 0) {
+    gameState.gameOver = true;
+  }
+}
+
+// ---- スコア ----
+function updateScore(elapsedSec) {
+  gameState.score = Math.floor(elapsedSec * 10) + gameState.dodged * 5;
+  scoreValueEl.textContent = gameState.score;
+}
+
+function updateHud() {
+  scoreValueEl.textContent = gameState.score;
+  livesBoxEl.innerHTML = "❤️".repeat(Math.max(0, gameState.lives)) + "🖤".repeat(Math.max(0, gameState.maxLives - gameState.lives));
+}
+
+// =================================================================
+// 7. 描画
+// =================================================================
+function render(now, elapsedSec) {
+  const w = gameCanvas.width, h = gameCanvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  // 背景の簡易グリッド演出
+  ctx.strokeStyle = "rgba(79,209,255,0.05)";
+  ctx.lineWidth = 1;
+  for (let gx = 0; gx < w; gx += 40) {
+    ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke();
+  }
+
+  // プレイエリア境界
+  ctx.strokeStyle = "rgba(79,209,255,0.15)";
+  ctx.strokeRect(PLAY_MARGIN, PLAY_MARGIN, w - PLAY_MARGIN * 2, h - PLAY_MARGIN * 2);
+
+  // 障害物
+  for (const ob of gameState.obstacles) {
+    ctx.save();
+    ctx.translate(ob.x + ob.size / 2, ob.y + ob.size / 2);
+    ctx.rotate((ob.x * 0.01) % (Math.PI * 2));
+    ctx.fillStyle = ob.color;
+    ctx.shadowColor = ob.color;
+    ctx.shadowBlur = 12;
+    const s = ob.size;
+    ctx.beginPath();
+    ctx.moveTo(0, -s / 2);
+    ctx.lineTo(s / 2, 0);
+    ctx.lineTo(0, s / 2);
+    ctx.lineTo(-s / 2, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // プレイヤーキャラクター
+  ctx.save();
+  const isFlashing = player.invincible && Math.floor(now / 100) % 2 === 0;
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+  if (player.invincible) {
+    ctx.fillStyle = isFlashing ? "#fff7b0" : "#4fd1ff";
+    ctx.shadowColor = "#fff7b0";
+    ctx.shadowBlur = 26;
+  } else {
+    ctx.fillStyle = "#4fd1ff";
+    ctx.shadowColor = "#4fd1ff";
+    ctx.shadowBlur = 14;
+  }
+  ctx.fill();
+
+  // 簡易的な目でキャラクターの向きを表現
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#04101f";
+  ctx.beginPath();
+  ctx.arc(player.x - 7, player.y - 4, 3.2, 0, Math.PI * 2);
+  ctx.arc(player.x + 7, player.y - 4, 3.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// =================================================================
+// 8. ゲームオーバー処理
+// =================================================================
+function endGame() {
+  gameState.running = false;
+  const survivedSec = ((performance.now() - gameState.startTime) / 1000).toFixed(1);
+
+  finalScoreEl.textContent = gameState.score;
+  finalStatsEl.textContent = `生存時間: ${survivedSec}秒 ／ 回避した障害物: ${gameState.dodged}個`;
+
+  gameScreen.classList.add("hidden");
+  gameOverScreen.classList.remove("hidden");
+}
+
+retryBtn.addEventListener("click", () => {
+  gameOverScreen.classList.add("hidden");
+  gameScreen.classList.remove("hidden");
+  resizeCanvas();
+  resetGameState();
+  runCountdown();
+});
+
+backToTitleBtn.addEventListener("click", () => {
+  gameOverScreen.classList.add("hidden");
+  startScreen.classList.remove("hidden");
+  startBtn.disabled = false;
+  setStatus("");
+});
+
+</script>
+</body>
+</html>
